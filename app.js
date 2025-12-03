@@ -630,7 +630,7 @@ async function handleStep4Submit(event) {
     }
 }
 
-// Submit to Supabase
+// Submit to Supabase and n8n Webhook
 async function submitToSupabase() {
     const dataToSubmit = {
         nome_completo: formData.nome_completo,
@@ -650,13 +650,31 @@ async function submitToSupabase() {
         created_at: new Date().toISOString()
     };
 
-    const { data, error } = await supabase
-        .from('captacao_medicos')
-        .insert([dataToSubmit]);
+    // Submit to Supabase and n8n webhook in parallel
+    const [supabaseResult, webhookResult] = await Promise.all([
+        // Supabase submission
+        supabase
+            .from('captacao_medicos')
+            .insert([dataToSubmit]),
 
-    if (error) throw error;
+        // n8n webhook submission
+        fetch('https://n8n-n8n.zewhde.easypanel.host/webhook/Formulário_Med10x', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(dataToSubmit)
+        }).catch(err => {
+            console.error('Webhook error:', err);
+            // Don't throw error for webhook - continue even if webhook fails
+            return { ok: false, error: err };
+        })
+    ]);
 
-    return data;
+    // Check Supabase result
+    if (supabaseResult.error) throw supabaseResult.error;
+
+    return supabaseResult.data;
 }
 
 // Render Thank You Screen
